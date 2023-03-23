@@ -15,7 +15,6 @@ const uint8_t DATA_TYPE_SIZE_CHANGE = 0;
 const uint8_t DATA_TYPE_STDIN = 1;
 const uint8_t DATA_TYPE_STDOUT = 2;
 
-// Custom terminal_size_t struct
 struct terminal_size_t {
     uint16_t rows;
     uint16_t cols;
