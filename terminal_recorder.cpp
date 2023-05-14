@@ -24,21 +24,26 @@ void write_to_log(std::ofstream &log_file, uint8_t data_type, const char *buf, s
     auto now = std::chrono::steady_clock::now().time_since_epoch();
     auto time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
 
-    log_file.write(reinterpret_cast<const char*>(&data_type), sizeof(data_type));
-    log_file.write(reinterpret_cast<const char*>(&time_ms), sizeof(time_ms));
-    log_file.write(reinterpret_cast<const char*>(&len), sizeof(len));
+    log_file.write(reinterpret_cast<const char *>(&data_type), sizeof(data_type));
+    log_file.write(reinterpret_cast<const char *>(&time_ms), sizeof(time_ms));
+    log_file.write(reinterpret_cast<const char *>(&len), sizeof(len));
     log_file.write(buf, len);
     log_file.flush();
 }
 
+bool is_terminal_size_equal(const terminal_size_t &a, const terminal_size_t &b) {
+    return a.rows == b.rows && a.cols == b.cols;
+}
+
 void check_and_log_terminal_size(int master_fd, std::ofstream &log_file, terminal_size_t &prev_terminal_size) {
-    struct winsize ws;
+    struct winsize ws{};
     ioctl(master_fd, TIOCGWINSZ, &ws);
 
     terminal_size_t current_terminal_size = {static_cast<uint16_t>(ws.ws_row), static_cast<uint16_t>(ws.ws_col)};
-    if (memcmp(&current_terminal_size, &prev_terminal_size, sizeof(current_terminal_size)) != 0) {
+    if (!is_terminal_size_equal(current_terminal_size, prev_terminal_size)) {
         prev_terminal_size = current_terminal_size;
-        write_to_log(log_file, DATA_TYPE_SIZE_CHANGE, reinterpret_cast<const char*>(&current_terminal_size), sizeof(current_terminal_size));
+        write_to_log(log_file, DATA_TYPE_SIZE_CHANGE, reinterpret_cast<const char *>(&current_terminal_size),
+                     sizeof(current_terminal_size));
     }
 }
 
@@ -47,7 +52,7 @@ int main() {
     std::ofstream log_file("terminal_log.bin", std::ios::binary);
 
     // Get the terminal size of the parent process
-    struct winsize parent_ws;
+    struct winsize parent_ws{};
     ioctl(STDIN_FILENO, TIOCGWINSZ, &parent_ws);
 
     pid_t pid = forkpty(&master_fd, nullptr, nullptr, nullptr);
@@ -67,7 +72,7 @@ int main() {
     // Parent process
 
     // Set the terminal to raw mode
-    struct termios orig_term_settings, raw_term_settings;
+    struct termios orig_term_settings{}, raw_term_settings{};
     tcgetattr(STDIN_FILENO, &orig_term_settings);
     raw_term_settings = orig_term_settings;
     cfmakeraw(&raw_term_settings);
@@ -83,27 +88,28 @@ int main() {
     terminal_size_t prev_terminal_size = {0, 0};
 
     while (true) {
-        check_and_log_terminal_size(master_fd, log_file, prev_terminal_size);
-
         int ret = poll(fds, 2, -1);
         if (ret == -1) {
             perror("poll");
             break;
         }
 
+        int status;
+        pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) {
+            break;
+        } else if (result != 0) {
+            // Error occurred
+            perror("waitpid failed");
+            break;
+        }
+
+        check_and_log_terminal_size(master_fd, log_file, prev_terminal_size);
+
         if (fds[0].revents & POLLIN) {
             char buf[4096];
             ssize_t len = read(STDIN_FILENO, buf, sizeof(buf));
             if (len <= 0) break;
-
-            // Check for Ctrl+C (0x03) and terminate child and wrapper process
-            for (ssize_t i = 0; i < len; ++i) {
-                if (buf[i] == 0x03) {
-                    kill(pid, SIGINT);
-                    goto cleanup; // Exit the loop and clean up
-                }
-            }
-
             write(master_fd, buf, len);
             write_to_log(log_file, DATA_TYPE_STDIN, buf, len);
         }
@@ -117,7 +123,6 @@ int main() {
         }
     }
 
-cleanup:
     // Restore the terminal settings
     tcsetattr(STDIN_FILENO, TCSANOW, &orig_term_settings);
 

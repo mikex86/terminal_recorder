@@ -1,1 +1,1 @@
-g++ -o terminal_recorder terminal_recorder.cpp -lutil
+g++ -o terminal_recorder terminal_recorder.cpp -L/usr/local/lib -lutil
