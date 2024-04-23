@@ -12,7 +12,7 @@ chmod +x compile.sh
 ## Install python requirements for log_playback.py
 
 ```
-python install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 ## How to use
