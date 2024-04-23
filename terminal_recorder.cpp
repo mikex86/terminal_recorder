@@ -47,7 +47,7 @@ void check_and_log_terminal_size(int master_fd, std::ofstream &log_file, termina
     }
 }
 
-int main() {
+int main(int argc, char **argv) {
     int master_fd;
     std::ofstream log_file("terminal_log.bin", std::ios::binary);
 
@@ -65,8 +65,8 @@ int main() {
         // Set the terminal size of the child process
         ioctl(STDIN_FILENO, TIOCSWINSZ, &parent_ws);
 
-        execl("/bin/bash", "/bin/bash", "-i", nullptr);
-        perror("execl");
+        execv("/bin/bash", argv);
+        perror("execv");
         return 1;
     }
     // Parent process
@@ -75,7 +75,16 @@ int main() {
     struct termios orig_term_settings{}, raw_term_settings{};
     tcgetattr(STDIN_FILENO, &orig_term_settings);
     raw_term_settings = orig_term_settings;
-    cfmakeraw(&raw_term_settings);
+    tcgetattr(STDIN_FILENO, &orig_term_settings);
+raw_term_settings = orig_term_settings; 
+raw_term_settings.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+raw_term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+raw_term_settings.c_cflag &= ~(CSIZE | PARENB);
+raw_term_settings.c_cflag |= CS8;
+raw_term_settings.c_oflag &= ~(OPOST);
+raw_term_settings.c_cc[VMIN] = 1;  
+raw_term_settings.c_cc[VTIME] = 0;
+tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw_term_settings);
     tcsetattr(STDIN_FILENO, TCSANOW, &raw_term_settings);
 
     // Use poll to multiplex input and output between user and shell
