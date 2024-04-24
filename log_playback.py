@@ -80,7 +80,11 @@ class LogTerminalProvider(TerminalProvider):
         elif data_type == DATA_TYPE_STDIN:
             self.virtual_stdin += data
         elif data_type == DATA_TYPE_STDOUT:
-            self.pyte_stream.feed(data.decode('utf-8', 'ignore'))
+            # workaround because pyte doesn't support alternate screens
+            xterm_str = data.decode('utf-8', 'ignore')
+            if '\x1b[?1049l' in xterm_str:
+                xterm_str = xterm_str.replace('\x1b[?1049l', '\x1b[2J\x1b[H')
+            self.pyte_stream.feed(xterm_str)
 
         return delay
 
